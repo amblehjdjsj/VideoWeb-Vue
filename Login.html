@@ -19,6 +19,8 @@
         </ul>
         <video id="player" controls=""></video>
         <h3>影视列表 ({{ lists.length }} 部):</h3>
+        <button @click="Uppage">上一页</button>
+        <button @click="Downpage">下一页</button>
         <div v-for="movie in lists">
             <h4>{{ movie.vod_name }}</h4>
             <p>ID: {{ movie.vod_id }}</p>
@@ -26,7 +28,7 @@
             <p>更新时间: {{ movie.vod_time }}</p>
             <p>备注: {{ movie.vod_remarks }}</p>
             <p>演员: {{ movie.vod_actor }}</p>
-            <p>介绍: {{ movie.vod_blurb.trim()}}</p>
+            <p>介绍: {{ movie.vod_blurb}}</p>
             <img :src="movie.vod_pic" v-if="movie.vod_pic" width="100">
             <p v-else>No image</p>
             <div v-if="movie.vod_play_url">
@@ -56,6 +58,20 @@
                 total:0
             },
             methods:{
+                Uppage:function(){
+                    if(this.page>1){
+                        this.page-=1;
+                    }
+
+                },
+                Downpage:function(){
+                    this.page+=1;
+                    
+
+                },
+
+
+
                 playVideo: function(url){
                 if(!url) {
                     alert('无效的视频URL');
@@ -181,8 +197,6 @@
             }
         }
     }
-    
-    // 去重，确保没有重复的剧集
     const uniqueEpisodes = [];
     const seen = new Set();
     
