@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" type="image/x-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔐</text></svg>">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/2.6.14/vue.min.js" type="application/javascript"></script>
+    <script src="https://cdn.bootcss.com/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdn.bootcss.com/hls.js/8.0.0-beta.3/hls.min.js"></script>
     <title>Login &#128512;&#128512;&#128512;</title>
 </head>
 <body>
@@ -15,17 +17,96 @@
             <li>Movie</li>
             <li>Search<input v-model="keyword" width="100px"><button @click="click_search">Search</button></li>
         </ul>
-        <p>{{Jsoninfo}}</p>
+        <video id="player" controls=""></video>
+        <h3>影视列表 ({{ lists.length }} 部):</h3>
+        <div v-for="movie in lists">
+            <h4>{{ movie.vod_name }}</h4>
+            <p>ID: {{ movie.vod_id }}</p>
+            <p>类型: {{ movie.type_name }}</p>
+            <p>更新时间: {{ movie.vod_time }}</p>
+            <p>备注: {{ movie.vod_remarks }}</p>
+            <p>演员: {{ movie.vod_actor }}</p>
+            <p>介绍: {{ movie.vod_blurb.trim()}}</p>
+            <img :src="movie.vod_pic" v-if="movie.vod_pic" width="100">
+            <p v-else>No image</p>
+            <div v-if="movie.vod_play_url">
+                <strong>在线播放:</strong>
+                <div>
+                    <button 
+                        v-for="episode in parseEpisodes(movie.vod_play_url)" 
+                        :key="episode.name"
+                        @click="playVideo(episode.url)"
+                        style="margin: 5px; padding: 5px 10px;"
+                    >
+                        {{ episode.name }}
+                    </button>
+                </div>
+            </div>
+        </div>
     </div>
     <script>
         new Vue({
             el:'#Main',
             data:{
-                page:3,
-                keyword:'',
+                page:1,
+                keyword:'去有风的地方',
                 Jsoninfo:'',
+                lists:[],
+                pagecount:0,
+                total:0
             },
             methods:{
+                playVideo: function(url){
+                if(!url) {
+                    alert('无效的视频URL');
+                    return;
+                }
+                
+                // 使用您提供的可运行的播放函数
+                this.playM3u8(url);
+            },
+            
+            playM3u8: function(url){
+                if(Hls.isSupported()) {
+                    var video = document.getElementById('player');
+                    video.volume = 1.0;
+                    var hls = new Hls();
+                    const proxyUrl = 'https://api.allorigins.win/raw?url=';
+                    // 清理URL - 移除可能的.m3u8重复后缀
+                    var m3u8Url = decodeURIComponent(url);
+                    
+                    console.log('播放URL:', proxyUrl+m3u8Url);
+                    
+                    hls.loadSource(m3u8Url);
+                    hls.attachMedia(video);
+                    hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                        video.play().catch(function(e) {
+                            console.error('播放失败:', e);
+                            alert('播放失败: ' + e.message);
+                        });
+                    });
+                    
+                    // 添加错误处理
+                    hls.on(Hls.Events.ERROR, function(event, data) {
+                        console.error('HLS错误:', data);
+                        if(data.fatal) {
+                            switch(data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    alert('网络错误，无法加载视频');
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    alert('媒体错误，视频格式可能不支持');
+                                    break;
+                                default:
+                                    alert('播放错误: ' + data.details);
+                                    break;
+                            }
+                        }
+                    });
+                } else {
+                    alert('您的浏览器不支持HLS播放');
+                }
+            },
                 click_search:function(){
                     this.get_api_info();
                 },
@@ -39,24 +120,89 @@
                     //(fetch) JavaScript 接口
                     fetch(finalUrl)
                     .then(response => {
+                        alert('Doing Analysis Data ');
                         if (!response.ok) {
                             throw new Error('网络响应不正常');
                         }
                         return response.json()
                     })
                     .then(data => {
-                        alert('From json analysis data'); // 调试
+                        alert('Analysis Data Finished');
                         if(!data.list||data.list.length==0){
-                            alert('From json analysis data list is null'); 
                             if(this.page>1){
                                 this.page-=1;
                                 this.get_api_info();
                                 return;
                             }
                         }
+                        this.lists=data.list||[];
+                        this.pagecount=data.pagecount||0;
+                        this.total=data.total||0;
+                        
+                        
                         this.Jsoninfo = JSON.stringify(data, null, 2);
+                        
                     })
+                },
+                parseEpisodes: function(playUrl) {
+    if (!playUrl) return [];
+    
+    const episodes = [];
+    // 先按#分割不同的播放源
+    const sources = playUrl.split('#');
+    
+    for (let source of sources) {
+        // 在每个播放源中按$分割剧集
+        const parts = source.split('$');
+        
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i].trim();
+            if (!part) continue;
+            
+            // 检测剧集名称（包含"第"和"集"）
+            if (part.includes('第') && part.includes('集')) {
+                const episodeName = part;
+                let episodeUrl = '';
+                
+                // 查找对应的URL
+                if (i + 1 < parts.length) {
+                    const nextPart = parts[i + 1].trim();
+                    // 只识别包含 .m3u8 的URL
+                    if (nextPart && nextPart.includes('.m3u8')) {
+                        episodeUrl = nextPart.replace(/\\\//g, '/');
+                        i++; // 跳过URL部分
+                        
+                        episodes.push({
+                            name: episodeName,
+                            url: episodeUrl
+                        });
+                    }
                 }
+            }
+        }
+    }
+    
+    // 去重，确保没有重复的剧集
+    const uniqueEpisodes = [];
+    const seen = new Set();
+    
+    for (let episode of episodes) {
+        const key = episode.name + episode.url;
+        if (!seen.has(key)) {
+            seen.add(key);
+            uniqueEpisodes.push(episode);
+        }
+    }
+    
+    // 按剧集名称排序
+    uniqueEpisodes.sort((a, b) => {
+        const numA = parseInt(a.name.match(/第(\d+)集/)?.[1] || 0);
+        const numB = parseInt(b.name.match(/第(\d+)集/)?.[1] || 0);
+        return numA - numB;
+    });
+    
+    return uniqueEpisodes;
+}
             }
         });
     </script>
